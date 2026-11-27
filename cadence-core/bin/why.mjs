@@ -21,6 +21,10 @@
 
 import { join as joinPath } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { lstatSync } from 'node:fs';
+import { oldPathArchive } from './lib/agile-paths.mjs';
+import { archivePath } from './lib/planning-store.mjs';
+import { fromRoot } from './lib/project-homes.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { CONTRACTS, rowReader } from './lib/arg-contract.mjs';
 import {
@@ -123,9 +127,10 @@ function joinFor(index, sha) {
  * Resolve each commit in `raws` against the index and hang the record edges off it, memoized per directory and plan.
  * @param {string} dir @param {string} path the queried repo-relative path
  * @param {any} index @param {{sha: string, date: string, subject: string}[]} raws
+ * @param {string|null} old the old path's archive on a switched project, else null
  * @returns {{entries: any[], warnings: string[]}}
  */
-function joinChain(dir, path, index, raws) {
+function joinChain(dir, path, index, raws, old) {
   /** @type {Map<string, any>} */
   const memo = new Map();
   /** @type {Map<string, any>} */
@@ -194,17 +199,34 @@ function joinChain(dir, path, index, raws) {
   if (open.length) {
     const paths = touchedPaths(dir, open.map((e) => e.sha));
     const archive = archiveSections(joinPath(dir, '.planning'));
+    // a switch takes ARCHIVE.md with the rest of the old path
+    const oldArchive = old === null ? new Map() : archiveSections(old);
+    const oldFile = old === null ? '' : fromRoot(dir, archivePath(old));
     for (const e of open) {
       const close = closeOver(index.prunes || [], e.date);
+      const label = close && close.label;
+      const live = label ? archive.get(label) : undefined;
+      const moved = label && !live ? oldArchive.get(label) : undefined;
       e.join.gap = {
         close,
         scope: commitScope(e.subject),
         paths: paths.get(e.sha) || [],
-        archive: (close && close.label && archive.get(close.label)) || [],
+        archive: live || moved || [],
+        // named only for the archive's rows, so a project never switched answers byte for byte as it did
+        ...(moved ? { archiveFile: oldFile } : {}),
       };
     }
   }
   return { entries, warnings: [...warnings] };
+}
+
+/**
+ * The old path's archive a switch left, or null. Only a real folder: through a link the walk would leave `.planning`.
+ * @param {string} planning @returns {string|null}
+ */
+function oldRootOf(planning) {
+  const old = oldPathArchive(planning);
+  try { return lstatSync(old).isDirectory() ? old : null; } catch { return null; }
 }
 
 /** A conventional commit's scope as the subject spells it, `1-3` out of `feat(1-3): ...`.
@@ -289,17 +311,21 @@ try {
           detail: line === undefined ? 'the bare-path chain query' : 'the line-scoped chain query',
           hint: GIT_FAILED_HINT });
       } else {
-        // one merged index per invocation (not per entry) over four tiers; the disk record wins when two claim a phase
+        // one merged index per invocation (not per entry); the disk record wins when two claim a phase
+        const planning = joinPath(dir, '.planning');
+        const old = oldRootOf(planning);
+        const under = old === null ? '' : fromRoot(planning, old);
         const index = mergeCommitIndexes(
-          buildCommitIndex(joinPath(dir, '.planning')),
-          buildTaskIndex(joinPath(dir, '.planning')),
+          buildCommitIndex(planning),
+          buildTaskIndex(planning),
           buildRecoveredIndex(dir),
+          old === null ? [] : [buildCommitIndex(old, under), buildTaskIndex(old, under)],
         );
         const raws = parseEntries(chain.stdout);
         // bare arm only, since -L carries its own simplification, and only after the chain succeeded
         const excluded = line === undefined ? simplificationReport(dir, path, raws) : null;
         // join only the commits the render will show; `total` still counts the whole chain
-        const joined = joinChain(dir, path, index, capChain(raws, top));
+        const joined = joinChain(dir, path, index, capChain(raws, top), old);
         const rendered = renderChain(joined.entries, { top, total: raws.length, excluded, path });
         emit({
           ok: true, path, line, result: 'chain',
