@@ -6,10 +6,10 @@
 'use strict';
 
 import {
-  appendFileSync, closeSync, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, openSync, renameSync, rmSync,
+  appendFileSync, closeSync, copyFileSync, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, renameSync, rmSync,
   statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 // the one local import: text-util.mjs has no imports and no I/O, and the helper census allows one sleep
 import { sleep } from './text-util.mjs';
 
@@ -38,6 +38,24 @@ export function atomicWrite(file, text) {
   }
   writeFileSync(tmp, text);
   renameSync(tmp, file);
+}
+
+/**
+ * atomicWrite, synced: the bytes and the rename are on disk when it returns. For the one copy a step that can't be undone
+ * leans on, since a new file's data can still be in the page cache when the step after it lands.
+ * @param {string} file @param {string | Uint8Array} data
+ * @throws when the temp path is a symlink, as atomicWrite does
+ */
+export function durableWrite(file, data) {
+  const tmp = `${file}.${process.pid}.${tmpSeq++}.tmp`;
+  let st = null;
+  try { st = lstatSync(tmp); } catch { /* ENOENT is the ordinary case */ }
+  if (st && st.isSymbolicLink()) throw new Error(`durableWrite refused: temp path is a symlink: ${tmp}`);
+  const fd = openSync(tmp, 'w');
+  try { writeFileSync(fd, data); fsyncSync(fd); } finally { closeSync(fd); }
+  renameSync(tmp, file);
+  const dir = openSync(dirname(file), 'r');
+  try { fsyncSync(dir); } finally { closeSync(dir); }
 }
 
 /** Append `data` to `file`, creating it. @param {string} file @param {string | Uint8Array} data */

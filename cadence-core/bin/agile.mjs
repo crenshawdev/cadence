@@ -48,7 +48,8 @@ import { readCurrentBranch } from './lib/git-head.mjs';
 import { READS_FILE, ROTATED_READS_FILE } from './lib/read-trace.mjs';
 import { ROTATED_TRACE_FILE, TRACE_FILE } from './lib/trace.mjs';
 import { signingProblem } from './lib/git-signing.mjs';
-import { atomicWrite, copyFile, ensureRecordsIgnore, makeDir, movePath, removeTree, riskCarryDir, unlinkFile, writeFileNew } from './lib/planning-store.mjs';
+import { atomicWrite, ensureRecordsIgnore, makeDir, movePath, removeTree, riskCarryDir, unlinkFile, withPlanningFileLock, writeFileNew } from './lib/planning-store.mjs';
+import { onAgilePath } from './lib/project-homes.mjs';
 import { REBUILDABLE, emptyState, markAgile, readState, recordsReady, statePath } from './lib/project-state.mjs';
 import { emit, emitCaught } from './lib/seam-io.mjs';
 import { interviewOptions } from './lib/surface-scan.mjs';
@@ -152,6 +153,14 @@ function openOldRelease(dir, old) {
     hint: 'close that project\'s release with /cad-milestone and land it with /cad-land before it can leave the old path; nothing was written' };
 }
 
+/** Does that archive hold nothing but the old state's copy, as a switch stopped at its marker leaves it? @param {string} archive */
+function onlyStateCopy(archive) {
+  const names = (/** @type {string} */ f) => { const st = lstatOf(f); return st?.isDirectory() && !st.isSymbolicLink() ? readdirSync(f) : null; };
+  const top = names(archive);
+  const records = names(join(archive, 'records'));
+  return top !== null && top.every((n) => n === 'records') && (records === null ? !top.length : records.every((n) => n === 'state.json'));
+}
+
 /**
  * Whether an old-path project's release has landed, so a start may move it to this path: no cycle open, no deferred
  * finding left unruled and no risk rulings carried for a land still to run. A land left local clears neither of the
@@ -161,8 +170,8 @@ function openOldRelease(dir, old) {
 function landed(dir, old, s) {
   const blocked = (/** @type {string} */ detail, /** @type {string} */ hint) => ({ reason: 'old-path', detail, hint: `${hint}; nothing was written` });
   if (s.cycleOpen) return openOldRelease(dir, old);
-  // a stopped switch writes its list before anything goes in the archive, so an archive with no list isn't one of ours
-  if (lstatOf(oldPathArchive(dir)) !== null && lstatOf(switchListFile(dir)) === null) {
+  // before the marker a switch writes only its list and the old state's copy, so an archive holding anything else isn't one of ours
+  if (lstatOf(oldPathArchive(dir)) !== null && !(lstatOf(switchListFile(dir)) !== null && onlyStateCopy(oldPathArchive(dir)))) {
     return blocked(`${oldPathArchive(dir)} is already there, and the switch puts the old path's files in that folder`, 'move that folder aside, then re-run');
   }
   // the state was read through it, and the old path itself refuses a records folder that is a link or a file
@@ -1105,25 +1114,24 @@ const COPIED = ['PROJECT.md', 'REQUIREMENTS.md', 'CAPTURE.md', 'records/DECLINED
 /** Is that name at the top of the planning folder the old path's own? A lock goes with the file it locks. @param {string} name */
 function oldPathName(name) {
   const base = name.endsWith('.lock') ? name.slice(0, -'.lock'.length) : name;
-  return OLD_PATH_ARCHIVED.includes(base) || base.startsWith('_archive-') || FIRE_FILES.some((p) => base.startsWith(p))
-    || LOGS.some((log) => base === log || base.startsWith(`${log}.`));
+  return OLD_PATH_ARCHIVED.includes(base) || base.startsWith('_archive-') || FIRE_FILES.some((p) => base.startsWith(p)) || logName(base);
 }
 
 /**
  * The old REQUIREMENTS.md's text, '' when there's none. A hand edit or another run may have made it anything, and the
  * IDs it holds can't be judged from a link.
- * @param {string} dir @returns {{text: string} | {refusal: Refusal}}
+ * @param {string} dir @returns {{text: string, file: string} | {refusal: Refusal}}
  */
 function oldRequirements(dir) {
   // a switch stopped after its moves has it in the archive
   const file = [join(dir, 'REQUIREMENTS.md'), join(oldPathArchive(dir), 'REQUIREMENTS.md')].find((f) => lstatOf(f) !== null) ?? join(dir, 'REQUIREMENTS.md');
   const st = lstatOf(file);
-  if (st === null) return { text: '' };
+  if (st === null) return { text: '', file };
   if (!st.isFile()) {
     return { refusal: { reason: 'old-requirements', detail: `${file} is not a plain file, so the IDs the old path used can't be read`,
       hint: 'put it back as a plain file from git or your backup, then re-run; nothing was written' } };
   }
-  try { return { text: readFileSync(file, 'utf8') }; } catch (e) {
+  try { return { text: readFileSync(file, 'utf8'), file }; } catch (e) {
     return { refusal: { reason: 'old-requirements', detail: `${file} can't be read (${/** @type {any} */ (e).code ?? e}), so the IDs the old path used aren't known`,
       hint: 'make it readable, then re-run; nothing was written' } };
   }
@@ -1145,24 +1153,28 @@ function closedDesigns(dir, oldText) {
 }
 
 /**
- * The list a stopped switch left, read as a record another run wrote: each line has to be a path the plan could name, a
- * top-level name of the old path's, or one entry under records/ or seldon/.
- * @param {string} dir @returns {{value: string[]} | {refusal: Refusal}}
+ * The list a stopped switch left, read as a record another run wrote: each line has to be a top-level name of the old
+ * path's, one entry under records/, or a design under seldon/ that is closed or already archived, which never names the
+ * design being started. `missing` when it's gone, which another start finishing the move does.
+ * @param {string} dir @param {string} oldText @returns {{value: string[]} | {missing: true} | {refusal: Refusal}}
  */
-function heldList(dir) {
+function heldList(dir, oldText) {
   const file = switchListFile(dir);
   const bad = (/** @type {string} */ why) => ({ refusal: { reason: 'switch-list', detail: `${file} ${why}, so what the stopped move still has to move isn't known`,
     hint: 'put it back from your backup, or finish the move by hand into _archive-old-path/ and remove it, then re-run; nothing was moved' } });
   const st = lstatOf(file);
-  if (!st?.isFile()) return bad('is not a plain file');
+  if (st === null) return { missing: true };
+  if (!st.isFile()) return bad('is not a plain file');
   const lines = readFileSync(file, 'utf8').split('\n').filter((l) => l !== '');
   const own = [basename(oldPathArchive(dir)), basename(switchListFile(dir))];
+  const closed = closedDesigns(dir, oldText);
   const named = (/** @type {string} */ rel) => {
     const parts = rel.split('/');
     if (parts.length === 1) return oldPathName(rel) && !own.includes(rel);
     const [home, name] = parts;
-    return parts.length === 2 && ['records', 'seldon'].includes(home) && name !== '' && name !== '.' && name !== '..'
-      && !(home === 'records' && KEPT_RECORDS.includes(name));
+    if (parts.length !== 2 || name === '' || name === '.' || name === '..') return false;
+    if (home === 'records') return !KEPT_RECORDS.includes(name);
+    return home === 'seldon' && (closed.includes(rel) || lstatOf(join(oldPathArchive(dir), rel)) !== null);
   };
   const wrong = lines.filter((l) => !named(l));
   if (!lines.length) return bad('names no path');
@@ -1170,39 +1182,86 @@ function heldList(dir) {
   return { value: lines };
 }
 
+/** Is that name the run or read record, or a rotation's claim or temp beside one? @param {string} name */
+function logName(name) {
+  return LOGS.some((log) => name === log || name.startsWith(`${log}.`));
+}
+
 /**
- * Move the old path's files into the archive: the list first, then a copy of the old state, then the marker in its place,
- * then each listed path. A path whose twin is already in the archive went in an earlier run, and a log a hook wrote since
- * is the new path's own, so both are passed over. A refusal, or null once everything listed is in.
- * @param {string} dir @param {string[]} paths
+ * Move the old path's files into the archive, holding the switch's own lock so a second start waits its turn. It judges
+ * the project again from disk first, since the start's look may be minutes old: an unmarked one must still be landed and
+ * gets a list written fresh, a marked one finishes the list on disk. Then the marker takes the old state's place, with
+ * its copy in the archive, and each listed path goes in. The list or a refusal comes back.
+ * @param {string} dir @returns {{archive: string[]} | {refusal: Refusal}}
  */
-function moveOldPath(dir, paths) {
-  const archive = oldPathArchive(dir);
-  const copy = join(archive, 'records', 'state.json');
-  // before the marker nothing has moved, so the list is written fresh from this run's plan
-  if (readState(dir).kind === 'valid') {
-    atomicWrite(switchListFile(dir), `${paths.join('\n')}\n`);
-    makeDir(dirname(copy));
-    copyFile(statePath(dir), copy);
+function moveOldPath(dir) {
+  const run = withPlanningFileLock(switchListFile(dir), () => moveLocked(dir), 'switch-locked');
+  if (run.ok === false) {
+    return { refusal: { reason: 'switch-locked', detail: run.detail,
+      hint: 'another start is moving this project to the new path - let it finish, or if none is running re-run in two minutes; nothing was moved by this run' } };
   }
-  const marked = markAgile(dir, copy);
-  if (marked.ok === false) {
-    return { ok: false, reason: marked.reason, detail: `${statePath(dir)}: ${marked.detail}`,
-      hint: marked.reason === 'state-locked'
+  return run.value;
+}
+
+/** @param {string} dir @returns {{archive: string[]} | {refusal: Refusal}} */
+function moveLocked(dir) {
+  const archive = oldPathArchive(dir);
+  const old = oldRequirements(dir);
+  if ('refusal' in old) return old;
+  const marked = onAgilePath(dir);
+  /** @type {string[]} */
+  let paths;
+  if (!marked) {
+    const why = refusal(dir);
+    if (why === null || why.reason !== 'switch') return { refusal: why ?? releaseOpen(dir) };
+    paths = switchPlan(dir, old.text).archive;
+  } else {
+    const held = heldList(dir, old.text);
+    // gone under a marker: another start finished the move while this one waited
+    if ('missing' in held) return { refusal: refusal(dir) ?? releaseOpen(dir) };
+    if ('refusal' in held) return held;
+    paths = held.value;
+  }
+  // a link or a file where the archive's folders go would carry the old files out of .planning
+  for (const f of [archive, join(archive, 'records'), join(archive, 'seldon')]) {
+    const st = lstatOf(f);
+    if (st !== null && (st.isSymbolicLink() || !st.isDirectory())) {
+      return { refusal: { reason: 'switch-archive', detail: `${f} is not a real folder, and the old path's files go in it`,
+        hint: 'move it aside, then re-run; nothing was moved by this run' } };
+    }
+  }
+  // before the marker nothing has moved, so a twin isn't this switch's; after it, a log a hook wrote since and the ignore
+  // file a start writes after its moves are the new path's own
+  const both = paths.filter((rel) => rel !== 'records/state.json' && lstatOf(join(dir, rel)) !== null && lstatOf(join(archive, rel)) !== null
+    && !(marked && rel.startsWith('records/') && (logName(basename(rel)) || rel === 'records/.gitignore')));
+  if (both.length) {
+    return { refusal: { reason: 'switch-twins', detail: `${both.join(', ')} ${both.length === 1 ? 'is' : 'are'} both at the top of ${dir} and in ${archive}`,
+      hint: 'keep the one you want and move the other aside, then re-run; nothing was moved by this run' } };
+  }
+  if (!marked) atomicWrite(switchListFile(dir), `${paths.join('\n')}\n`);
+  makeDir(join(archive, 'records'));
+  const mark = markAgile(dir, join(archive, 'records', 'state.json'));
+  if (mark.ok === false) {
+    return { refusal: { reason: mark.reason, detail: `${statePath(dir)}: ${mark.detail}`,
+      hint: mark.reason === 'state-locked'
         ? 'another command is writing the state file, or one was killed doing it - re-run in two minutes; nothing was moved'
-        : 'an old-path command changed the state since the start read it - re-run, which copies it again; nothing was moved' };
+        : 'fix the cause the detail names, then re-run; nothing was moved' } };
   }
   for (const rel of paths) {
-    if (rel === 'records/state.json') continue;
     const from = join(dir, rel);
     const to = join(archive, rel);
-    if (lstatOf(to) !== null || lstatOf(from) === null) continue;
+    if (rel === 'records/state.json' || lstatOf(from) === null || lstatOf(to) !== null) continue;
     makeDir(dirname(to));
     movePath(from, to);
   }
   // its ignore file moved with the logs, and the new path's records need their own
   ensureRecordsIgnore(dir);
-  return null;
+  return { archive: paths };
+}
+
+/** Remove the switch's list, which another start finishing the same move may have done first. @param {string} dir */
+function dropList(dir) {
+  try { unlinkFile(switchListFile(dir)); } catch (e) { if (/** @type {any} */ (e).code !== 'ENOENT') throw e; }
 }
 
 /**
@@ -1262,11 +1321,11 @@ function ready(dir, design) {
   const closed = early?.reason === 'release-closed' ? closedRelease(dir) : null;
   const oldRead = early?.reason === 'switch' ? oldRequirements(dir) : null;
   if (oldRead !== null && 'refusal' in oldRead) return no(oldRead.refusal);
-  const old = oldRead === null ? null : /** @type {{text: string}} */ (oldRead).text;
+  const old = oldRead === null ? null : /** @type {{text: string, file: string}} */ (oldRead).text;
   // the old path's own rule: an ID anywhere in its REQUIREMENTS.md is taken, whatever section or fence it's in
   const reused = old === null ? [] : read.design.requirements.map((q) => q.id).filter((id) => holdsToken(old, id));
   if (reused.length) {
-    return no({ reason: 'requirement-ids-used', detail: `${reused.join(', ')} ${reused.length === 1 ? 'is' : 'are'} already in ${join(dir, 'REQUIREMENTS.md')}, and an ID names one requirement for good`,
+    return no({ reason: 'requirement-ids-used', detail: `${reused.join(', ')} ${reused.length === 1 ? 'is' : 'are'} already in ${/** @type {{file: string}} */ (oldRead).file}, and an ID names one requirement for good`,
       hint: 'rename each in the design\'s prd.md and in every epics.md Requirements line that names it, by a Seldon rerun or by hand, then re-run; nothing was written' });
   }
   if (closed !== null && 'refusal' in closed) return no(closed.refusal);
@@ -1287,8 +1346,10 @@ function ready(dir, design) {
       hint: 'make it readable, then re-run; nothing was written' });
   }
   // once the marker is down some paths may have moved, so the list the first run wrote is the one to finish
-  if (switching !== null && readState(dir).kind === 'invalid' && /** @type {any} */ (readState(dir)).reason === 'agile-path') {
-    const held = heldList(dir);
+  if (switching !== null && onAgilePath(dir)) {
+    const held = heldList(dir, /** @type {string} */ (old));
+    // another start finished the move since this one looked
+    if ('missing' in held) return no(refusal(dir) ?? releaseOpen(dir));
     if ('refusal' in held) return no(held.refusal);
     switching = { ...switching, archive: held.value, copy: COPIED.filter((rel) => held.value.includes(rel)) };
   }
@@ -1436,10 +1497,12 @@ function start(dir, design, commitHere) {
   if ('refusal' in got) {
     // a switch whose release was renamed into place and stopped before its list went
     if (got.refusal.reason === 'release-open' && lstatOf(switchListFile(dir)) !== null) {
-      const held = heldList(dir);
+      const old = oldRequirements(dir);
+      if ('refusal' in old) return refuse(old.refusal);
+      const held = heldList(dir, old.text);
       if ('refusal' in held) return refuse(held.refusal);
-      unlinkFile(switchListFile(dir));
-      return emit({ ok: true, folder: agileDir(dir), switched: { archive: held.value }, finished: true });
+      dropList(dir);
+      return emit({ ok: true, folder: agileDir(dir), switched: { archive: 'value' in held ? held.value : [] }, finished: true });
     }
     return refuse(got.refusal);
   }
@@ -1459,13 +1522,17 @@ function start(dir, design, commitHere) {
   // another start is moving its files in, and the leftover epics/ cleared below may be its
   const running = closed === null ? null : otherStart(dir);
   if (running !== null) return refuse(running);
+  /** @type {string[] | null} */
+  let switched = null;
+  // first, so a move it refuses leaves the project as it was
+  if (got.switching) {
+    const moved = moveOldPath(dir);
+    if ('refusal' in moved) return refuse(moved.refusal);
+    switched = moved.archive;
+  }
   makeDir(dir);
   // part of the start, so one that died before it gets it written by the next
   writePolicy(dirname(resolve(dir)), got.config.testing);
-  if (got.switching) {
-    const stopped = moveOldPath(dir, got.switching.archive);
-    if (stopped !== null) return emit(stopped);
-  }
   // of the release, the marker goes first: a run that dies after it leaves a project the old path refuses, and the next start finishes
   const marked = markAgile(dir);
   if (marked.ok === false) {
@@ -1513,9 +1580,9 @@ function start(dir, design, commitHere) {
     clear(building);
   }
   // last, so a run stopped before it is told apart from a start that never moved anything
-  if (got.switching) unlinkFile(switchListFile(dir));
+  if (switched !== null) dropList(dir);
   emit({ ok: true, release: title, folder: agileDir(dir), epics: epics.map((e) => ({ id: e.epic, name: e.name })), uncovered,
-    ...(got.switching ? { switched: { archive: got.switching.archive } } : {}),
+    ...(switched !== null ? { switched: { archive: switched } } : {}),
     next: { id: epics[0].epic, name: epics[0].name, status: 'backlog', step: 'refine' } });
 }
 

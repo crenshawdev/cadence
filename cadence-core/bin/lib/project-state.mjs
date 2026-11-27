@@ -9,7 +9,7 @@
 'use strict';
 
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
-import { atomicWrite, ensureRecordsDir, recordsDir, statePath, withPlanningFileLock } from './planning-store.mjs';
+import { atomicWrite, durableWrite, ensureRecordsDir, recordsDir, statePath, withPlanningFileLock } from './planning-store.mjs';
 
 export { statePath };
 
@@ -261,26 +261,23 @@ export function emptyState(s) {
 
 /**
  * Mark a project as on the agile path, which every old-path command then refuses. A marked project is left as it is, and
- * a project with a state that holds anything is refused untouched, since only a switch may replace an old-path state: it
- * passes `archived`, and the state is replaced only while that copy holds its very bytes.
- * @param {string} planningRoot @param {string} [archived] where a switch copied the old state
+ * a project with a state that holds anything is refused untouched, since only a switch may replace an old-path state. A
+ * switch passes `copyTo`: the old state is written there from the bytes this lock read, synced, and only then replaced.
+ * @param {string} planningRoot @param {string} [copyTo] where a switch keeps the old state
  * @returns {StateWrite}
  */
-export function markAgile(planningRoot, archived) {
+export function markAgile(planningRoot, copyTo) {
   return locked(planningRoot, (file) => {
     const was = readState(planningRoot);
+    // marked already, so whatever copy a first start left is the old state's and nothing here touches it
     if (was.kind === 'invalid' && was.reason === 'agile-path') return { ok: true, changed: false };
-    // compared under the lock, so an old-path write since the copy can't be lost under the marker
-    const kept = archived !== undefined && was.kind === 'valid' && sameBytes(file, archived);
-    if (!kept && (was.kind === 'invalid' || (was.kind === 'valid' && !emptyState(was.state)))) return { ok: false, reason: 'state-present', detail: `${file} is already there` };
+    const switching = copyTo !== undefined && was.kind === 'valid';
+    if (!switching && (was.kind === 'invalid' || (was.kind === 'valid' && !emptyState(was.state)))) return { ok: false, reason: 'state-present', detail: `${file} is already there` };
+    // under the lock every old-path writer takes, so the copy is the state the marker replaces, byte for byte
+    if (switching) durableWrite(copyTo, readFileSync(file));
     atomicWrite(file, `${JSON.stringify({ [STAMP_KEY]: AGILE_LAYOUT, path: AGILE_PATH }, null, 2)}\n`);
     return { ok: true, changed: true };
   });
-}
-
-/** @param {string} a @param {string} b */
-function sameBytes(a, b) {
-  try { return readFileSync(a).equals(readFileSync(b)); } catch { return false; }
 }
 
 /** The invalid states a rebuild may replace: ones it read and judged. A newer layout or a file it could not read is not one. */
