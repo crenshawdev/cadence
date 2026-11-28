@@ -33,11 +33,9 @@ handled?", "answer": "<the label picked>"}]}`, the label without
 "(Recommended)", and `agile.mjs answer`.
 
 **Read**, in one message: the story file, the epic file,
-`.planning/agile/project.md`, whose Standing rules this build follows, the
-Result of each story it builds on, and the code its Delivers changes, as far as
-building it takes. With a testing policy
-(`testing.scope` set), `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/test-policy.md`
-too.
+`.planning/agile/project.md` and the Result of each story it builds on, as far
+as running the build takes. The session builds nothing, so it reads no code and
+no testing policy: section 3's executor does.
 
 ## 2. Begin, or pick up
 
@@ -68,6 +66,39 @@ began, and every commit after it is the story's and is never made again:
 `hint`, one line each, go to section 8, and close the bracket with the reason.
 
 ## 3. Build
+
+The session builds nothing. One `cad-executor` builds the story from a fresh
+context, and its work is the rest of this section and section 4, from **Its
+size** to the `check-commands` call. Resolve it, and relay each `warnings[]`
+entry to the user:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-executor --phase 0
+```
+
+Dispatch the `agent_type` and `model` it prints through
+`references/seam-spawn-agent.md`, bracketed by this append, with the prompt
+below it:
+
+```
+printf '%s' ".planning/agile/epics/{id}/{story}.md,.planning/agile/project.md" > "<the folder>/build-read.txt"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family lifecycle --event dispatch --plan {story}-build --role cad-executor --read-file "<the folder>/build-read.txt"
+```
+
+```
+Build story {story} {title} of epic {id}. Its story file, .planning/agile/epics/{id}/{story}.md, stands in for the plan file: its Delivers and Accepted when lines say what done is, an M's Plan holds its tasks, and an S is one task. Read it, the Standing rules in .planning/agile/project.md, which this build follows, and the Result of each story it builds on: {each one's story file, or "none"}. Base: {Base}, and what git log {Base}..HEAD already holds is done. Surfaces: {the resolve's `surfaces` verbatim, or "no layer answered, so all of the table's categories stand"}. {With `testing.scope` set: A testing policy is active.} Do sections 3 and 4 of {the absolute path this file was read from}, from "Its size" to the check-commands call, and nothing past them, writing size.json, commands.json and any capture's text in {the folder}. Commit scope: {story}. Your report file is .planning/agile/tasks/{story}/reports/plan-1.md, and no lease check runs, since this is no phase folder. Write no story or epic file yourself: a script writes them. Sequential executor on the normal working tree.
+```
+
+Close the bracket the moment it's back:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase 0 --plan {story}-build --role cad-executor --agent-id <the id on the subagent return> --tokens <the token count on it> --turns <the tool-call count on it> --duration-ms <the wall clock on it>
+```
+
+Then read its report file once: what it captured or didn't build goes in
+section 6's `differently` note. The story file says where to go: back in
+`backlog`, sized L, to section 8 with nothing built; a `CHECKPOINT` digest, its
+`Need` to the user and on to section 8 with that reason; otherwise section 5.
 
 **Its size**, before anything is changed. An S is one change with no written
 plan, an M has a short plan of two or three tasks, and anything more is an L,
@@ -189,8 +220,10 @@ can neither prove nor kill goes to the user. Then, by the epic's findings rule:
   question, and the ones picked are fixed now. A blocker or high not picked
   carries `overridden: true` in its ruling, since the user let it stand.
 
-Each fix is committed as section 3 commits, its hash set as that ruling's
-`fix_commit`. A finding that a command doesn't show its line is fixed by
+A `cad-executor` makes the fixes, dispatched and closed as section 3 dispatches
+one, with the prompt's "Do sections 3 and 4" sentence replaced by the findings
+to fix, each with the file and line that proves it and one commit for each. It
+commits as section 3 commits, and each hash is that ruling's `fix_commit`. A finding that a command doesn't show its line is fixed by
 recording the commands again as section 4 does, while the story is in review,
 and committing the story file as section 3 commits; it isn't reviewed again. A
 fix's own range gets `risk-check run` from the review's HEAD, and its fire on a
@@ -245,9 +278,12 @@ round's fix, and go on from the `risk-check run` below. A record commit, or what
 With none, when the command is what's wrong, a check that can't show its line
 whatever the code does, record the commands again as section 4 does and commit
 the story file as section 3 does. That clears the review, so note the round and go to
-section 5, which reviews the new commands. Otherwise fix the code, commit it as
-section 3 does, and run `risk-check run` from the last commit the Commits line
-names to HEAD, with its fire on a match. Then note the round, which sets the
+section 5, which reviews the new commands. Otherwise a `cad-executor` fixes the
+code, dispatched and closed as section 3 dispatches one, with the prompt's "Do
+sections 3 and 4" sentence replaced by each failed check's command and what it
+printed, and commits it as section 3 commits. Then run `risk-check run` from
+the last commit the Commits line names to HEAD, with its fire on a match. Then
+note the round, which sets the
 checks back to `not run`, and go to section 6:
 
 ```
