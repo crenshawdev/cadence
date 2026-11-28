@@ -20,7 +20,8 @@ allowed-tools:
 With no release open, ask what the project's setup leaves open, then turn the
 Seldon design `--brief` names, or one written from a short interview without
 it, into `.planning/agile/` and commit it. With one
-open, refine its next epic with the user, build its next story, ask the user
+open, refine its next epic with the user, have an executor agent build its
+next story, ask the user
 to accept a finished epic, close the release once every epic is done, or name
 its next step.
 </objective>

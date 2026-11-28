@@ -7,7 +7,7 @@ A project is on this path or on the phase path below, never on both.
 
 | Command | What it does |
 |---|---|
-| `/cad-agile [--brief <design folder>]` | The path's one command. With no release open, `--brief` asks what the project's setup leaves open, turns a Seldon design into a release with its epics, and commits it. With one open, refines its next epic with you: what's hard to undo is asked, and the stories are written once you approve them. Builds its next story: built, reviewed and its checks run, done only when every one passes. Asks you to accept an epic whose stories are all done. Otherwise names its next step. |
+| `/cad-agile [--brief <design folder>]` | The path's one command. With no release open, `--brief` asks what the project's setup leaves open, turns a Seldon design into a release with its epics, and commits it. With one open, refines its next epic with you: what's hard to undo is asked, and the stories are written once you approve them. Builds its next story: an executor agent builds it, then it's reviewed and its checks run, done only when every one passes. Asks you to accept an epic whose stories are all done. Otherwise names its next step. |
 
 ## Build spine (the core loop)
 A phase travels new-project -> context -> plan -> execute -> verify.
