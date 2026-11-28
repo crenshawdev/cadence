@@ -7,6 +7,18 @@ Releases 1.0.0 through 2.7.0 are in [docs/history/CHANGELOG-v1-v2.md](./docs/his
 
 ## [Unreleased]
 
+## [4.5.1] - 2026-11-27
+
+### Fixed
+
+- **A story on the new path is built by an executor agent, not by your
+  session.** `/cadence:cad-agile` used to make a story's change in the session
+  you run it from, so each build filled that session's context. Now one
+  `cad-executor` builds the story from a fresh context, and fixes for the
+  review's findings and for a failed check go to an executor too. Your session
+  only runs the steps around it: the review, the checks and the record. Tests:
+  `tests/agile-build.test.mjs`.
+
 ## [4.5.0] - 2026-11-27
 
 ### Added
@@ -3877,6 +3889,7 @@ about the code.
   sample size beside the claim. Counting a field across a corpus is not parsing
   it, and the parse is what fails.
 
+[4.5.1]: https://github.com/crenshawdev/cadence/releases/tag/v4.5.1
 [4.5.0]: https://github.com/crenshawdev/cadence/releases/tag/v4.5.0
 [4.4.4]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.4
 [4.4.3]: https://github.com/crenshawdev/cadence/releases/tag/v4.4.3
